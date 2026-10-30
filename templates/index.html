@@ -1,1 +1,200 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VK Video Saver</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #181b22;
+    --line: #272b35;
+    --text: #e8eaf0;
+    --muted: #8b92a3;
+    --accent: #4c8dff;
+    --accent-2: #3a76e0;
+    --err: #ff6b6b;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f4f6fa; --card: #fff; --line: #e2e6ee;
+      --text: #151821; --muted: #667085; --accent: #2f6bff; --accent-2: #1f55d6;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; justify-content: center; padding: 48px 16px;
+  }
+  main { width: 100%; max-width: 640px; }
+  h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -.02em; }
+  .sub { color: var(--muted); margin: 0 0 28px; }
+  form { display: flex; gap: 8px; }
+  input[type=url] {
+    flex: 1; min-width: 0; padding: 14px 16px; border-radius: 12px;
+    border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit;
+  }
+  input[type=url]:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  button, .dl {
+    padding: 14px 20px; border-radius: 12px; border: 0; background: var(--accent);
+    color: #fff; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none;
+    display: inline-block; white-space: nowrap;
+  }
+  button:hover, .dl:hover { background: var(--accent-2); }
+  button:disabled { opacity: .6; cursor: wait; }
+  .err { color: var(--err); margin-top: 16px; }
+  .card {
+    margin-top: 24px; background: var(--card); border: 1px solid var(--line);
+    border-radius: 16px; overflow: hidden;
+  }
+  .thumb { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; background: #000; }
+  .meta { padding: 16px 20px; border-bottom: 1px solid var(--line); }
+  .meta h2 { font-size: 18px; margin: 0 0 4px; }
+  .meta p { margin: 0; color: var(--muted); font-size: 14px; }
+  .qlist { padding: 8px; display: grid; gap: 6px; }
+  .opt { display: block; cursor: pointer; }
+  .opt input { position: absolute; opacity: 0; pointer-events: none; }
+  .opt .box {
+    display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+    border: 1px solid var(--line); border-radius: 12px; transition: border-color .12s, background .12s;
+  }
+  .opt:hover .box { border-color: var(--accent); }
+  .opt input:focus-visible + .box { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .opt input:checked + .box { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .dot {
+    width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--muted); flex: none;
+    display: grid; place-items: center;
+  }
+  .opt input:checked + .box .dot { border-color: var(--accent); }
+  .opt input:checked + .box .dot::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+  .q { font-weight: 600; }
+  .badge {
+    font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 6px;
+    background: var(--accent); color: #fff; margin-left: 8px; vertical-align: 1px;
+  }
+  .ext { color: var(--muted); font-size: 13px; }
+  .size { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .size.na { color: var(--muted); font-weight: 400; }
+  .bar { padding: 8px 14px 14px; }
+  .dl { display: block; text-align: center; width: 100%; }
+  .empty { padding: 16px 20px; color: var(--muted); }
+  .hidden { display: none; }
+  footer { margin-top: 32px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>VK Video Saver</h1>
+  <p class="sub">Вставь ссылку на видео из VK, выбери качество и скачай.</p>
 
+  <form id="form">
+    <input type="url" id="url" placeholder="https://vk.com/video-12345_67890" required autofocus>
+    <button id="go" type="submit">Найти</button>
+  </form>
+
+  <div id="err" class="err hidden"></div>
+
+  <section id="result" class="card hidden">
+    <img id="thumb" class="thumb" alt="">
+    <div class="meta">
+      <h2 id="title"></h2>
+      <p id="sub"></p>
+    </div>
+    <div id="formats" class="qlist" role="radiogroup" aria-label="Качество видео"></div>
+    <div class="bar"><a id="dl" class="dl hidden" href="#">Скачать</a></div>
+  </section>
+
+  <footer>Только для видео, которые ты имеешь право сохранять: свои или с разрешения автора.</footer>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+const fmtSize = (f, short) => {
+  const b = f.size;
+  if (!b) return "";
+  const mb = b / 1048576;
+  const txt = mb >= 1024 ? (mb / 1024).toFixed(2) + " ГБ" : mb.toFixed(1) + " МБ";
+  return (f.size_estimated ? "≈ " : "") + txt;
+};
+const qualityTag = (h) => (h >= 2160 ? "4K" : h >= 1440 ? "2K" : h >= 1080 ? "FHD" : "");
+const fmtDur = (s) => {
+  if (!s) return "";
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
+  const pad = (n) => String(n).padStart(2, "0");
+  return h ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
+};
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const url = $("url").value.trim();
+  $("err").classList.add("hidden");
+  $("result").classList.add("hidden");
+  $("go").disabled = true;
+  $("go").textContent = "Ищу…";
+
+  try {
+    const r = await fetch("/api/info", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "Ошибка");
+
+    $("thumb").src = data.thumbnail || "";
+    $("thumb").classList.toggle("hidden", !data.thumbnail);
+    $("title").textContent = data.title || "Без названия";
+    $("sub").textContent = [data.uploader, fmtDur(data.duration)].filter(Boolean).join(" · ");
+
+    const box = $("formats");
+    const dl = $("dl");
+    box.innerHTML = "";
+    if (!data.formats.length) {
+      box.innerHTML = '<div class="empty">Прямых ссылок на файл не найдено.</div>';
+      dl.classList.add("hidden");
+    }
+
+    const select = (f) => {
+      dl.href = `/api/download?url=${encodeURIComponent(url)}&format_id=${encodeURIComponent(f.format_id)}`;
+      dl.textContent = `Скачать ${f.quality}` + (f.size ? ` · ${fmtSize(f)}` : "");
+    };
+
+    data.formats.forEach((f, i) => {
+      const label = document.createElement("label");
+      label.className = "opt";
+      label.innerHTML = `
+        <input type="radio" name="q">
+        <div class="box">
+          <span class="dot"></span>
+          <span><span class="q"></span><span class="badge hidden"></span></span>
+          <span class="ext"></span>
+          <span class="size"></span>
+        </div>`;
+      const radio = label.querySelector("input");
+      label.querySelector(".q").textContent = f.quality;
+      const badge = label.querySelector(".badge");
+      const tag = qualityTag(f.height);
+      if (tag) { badge.textContent = tag; badge.classList.remove("hidden"); }
+      label.querySelector(".ext").textContent = (f.ext || "").toUpperCase();
+      const sz = label.querySelector(".size");
+      sz.textContent = f.size ? fmtSize(f) : "размер неизвестен";
+      sz.classList.toggle("na", !f.size);
+      radio.addEventListener("change", () => select(f));
+      if (i === 0) { radio.checked = true; select(f); }  // по умолчанию лучшее качество
+      box.append(label);
+    });
+    if (data.formats.length) dl.classList.remove("hidden");
+    $("result").classList.remove("hidden");
+  } catch (err) {
+    $("err").textContent = err.message;
+    $("err").classList.remove("hidden");
+  } finally {
+    $("go").disabled = false;
+    $("go").textContent = "Найти";
+  }
+});
+</script>
+</body>
+</html>
